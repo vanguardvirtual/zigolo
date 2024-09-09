@@ -15,13 +15,37 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // Standard release options allow the person running `zig build` to select
+    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
+
     const exe = b.addExecutable(.{
         .name = "zigolo",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+
     exe.version = .{ .major = 0, .minor = 0, .patch = 1 };
+    exe.linkSystemLibrary("sqlite3");
+
+    // create module for config
+    const config_module = b.addModule("config", .{
+        .root_source_file = b.path("src/config/config.zig"),
+    });
+
+    // create module for services
+    const services_module = b.addModule("services", .{
+        .root_source_file = b.path("src/services/services.zig"),
+    });
+
+    // create module for utils
+    const utils_module = b.addModule("utils", .{
+        .root_source_file = b.path("src/utils/utils.zig"),
+    });
+
+    exe.root_module.addImport("config", config_module);
+    exe.root_module.addImport("services", services_module);
+    exe.root_module.addImport("utils", utils_module);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -45,23 +69,25 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    run_tests(b, target, optimize, config_module, services_module, utils_module);
+}
+
+fn run_tests(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, services_module: *std.Build.Module, utils_module: *std.Build.Module) void {
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/services/__tests__/test_init_checks.zig"),
         .target = target,
         .optimize = optimize,
     });
 
+    exe_unit_tests.root_module.addImport("config", config_module);
+    exe_unit_tests.root_module.addImport("services", services_module);
+    exe_unit_tests.root_module.addImport("utils", utils_module);
+
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
-    // Similar to creating the run step earlier, this exposes a `test` step to
-    // the `zig build --help` menu, providing a way for the user to request
-    // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 }
